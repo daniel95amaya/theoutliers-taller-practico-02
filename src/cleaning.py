@@ -106,15 +106,25 @@ def clean_inventario(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         )
         log["registros_excluidos"] = registros_winsorizados.reset_index(drop=True)
 
-        # 5. Lead_Time_Dias: a categoria ordinal + imputar nulos con moda
+        # 5. Lead_Time_Dias: a categoria ordinal + imputar nulos con moda.
+        # La columna cruda original (mezcla de texto/numero, 16.12% nula) se
+        # REEMPLAZA por completo por 'Lead_Time_Categoria' -- no tendria sentido
+        # dejar ambas: la version limpia es la unica que se usa aguas abajo
+        # (ver integration.py). Si se conservara la cruda sin tocar, la tabla
+        # "Antes vs Despues" del dashboard mostraria los mismos nulos en ambos
+        # lados, lo cual es confuso e inconsistente con esta bitacora.
+        n_null_lt_antes = df["Lead_Time_Dias"].isna().sum()
         df["Lead_Time_Categoria"] = df["Lead_Time_Dias"].apply(_bucket_lead_time)
         n_null_lt = df["Lead_Time_Categoria"].isna().sum()
         moda_lt = df["Lead_Time_Categoria"].mode()
         moda_lt = moda_lt.iloc[0] if not moda_lt.empty else "Corto (3-5 dias)"
         df["Lead_Time_Categoria"] = df["Lead_Time_Categoria"].fillna(moda_lt)
+        df = df.drop(columns=["Lead_Time_Dias"])
         log["acciones"].append(
-            f"Lead_Time_Dias: reclasificado a variable ordinal 'Lead_Time_Categoria'; "
-            f"{n_null_lt} nulos imputados con la moda ('{moda_lt}')."
+            f"Lead_Time_Dias ({n_null_lt_antes} nulos, tipos mixtos texto/número): "
+            f"columna ELIMINADA y reemplazada por 'Lead_Time_Categoria' (variable "
+            f"ordinal limpia); {n_null_lt} nulos de esa nueva columna imputados con "
+            f"la moda ('{moda_lt}')."
         )
 
         # 6. Validacion temporal: Ultima_Revision no puede ser una fecha futura.
