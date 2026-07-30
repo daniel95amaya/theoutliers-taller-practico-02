@@ -102,6 +102,36 @@ def outlier_report(df: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
     ]
 
 
+def outlier_report_by_group(df: pd.DataFrame, col: str, group_col: str) -> pd.DataFrame:
+    """
+    Igual que iqr_outliers, pero calculando el IQR de forma independiente
+    dentro de cada grupo (p. ej. cada Categoria) en vez de sobre la columna
+    completa. Es la versión metodológicamente más rigurosa: un valor puede
+    ser normal para una categoría y anómalo para otra, y el IQR global no
+    distingue eso -- puede diluir anomalías reales o marcar como "outlier"
+    algo que es perfectamente normal dentro de su propio grupo.
+    """
+    if col not in df.columns:
+        raise QualityReportError(f"outlier_report_by_group: la columna '{col}' no existe.")
+    if group_col not in df.columns:
+        raise QualityReportError(f"outlier_report_by_group: la columna '{group_col}' no existe.")
+
+    rows = []
+    for grupo, sub in df.groupby(group_col):
+        stats = iqr_outliers(sub[col])
+        stats["grupo"] = grupo
+        stats["n"] = len(sub)
+        rows.append(stats)
+    if not rows:
+        return pd.DataFrame(
+            columns=["grupo", "n", "q1", "q3", "iqr", "lower", "upper",
+                     "n_outliers", "pct_outliers"]
+        )
+    return pd.DataFrame(rows)[
+        ["grupo", "n", "q1", "q3", "iqr", "lower", "upper", "n_outliers", "pct_outliers"]
+    ].sort_values("pct_outliers", ascending=False).reset_index(drop=True)
+
+
 # ---------------------------------------------------------------------------
 # 4. HEALTH SCORE
 # ---------------------------------------------------------------------------
