@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src
 
 from quality import (  # noqa: E402
     null_report, duplicate_report, outlier_report, health_score, revenue_reconciliation,
+    outlier_report_by_group,
 )
 from cleaning import (  # noqa: E402
     clean_inventario, clean_transacciones, clean_feedback, DataCleaningError,
@@ -275,6 +276,57 @@ with tab_auditoria:
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"No se pudo calcular la tabla de outliers: {exc}")
+    st.caption(
+        "⚠️ Este IQR es GLOBAL (una sola distribución para toda la columna). Un valor "
+        "puede ser normal para una categoría y anómalo para otra sin que este cálculo "
+        "lo distinga — ver el desglose por categoría abajo, metodológicamente más "
+        "riguroso."
+    )
+
+    # Columnas candidatas para agrupar el IQR de forma más rigurosa que el
+    # global -- distintas por dataset, según qué dimensiones categóricas
+    # tienen sentido de negocio en cada uno.
+    grupo_cols_map = {
+        "Inventario": ["Categoria", "Bodega_Origen"],
+        "Transacciones": ["Ciudad_Destino", "Canal_Venta"],
+        "Feedback": [],  # sin dimensión categórica de negocio relevante para IQR
+    }
+    grupo_cols_disponibles = [c for c in grupo_cols_map[dataset_sel] if c in df_raw.columns]
+
+    if grupo_cols_disponibles:
+        with st.expander("🔬 Outliers IQR calculados por grupo (más riguroso que el global)"):
+            st.caption(
+                "El mismo método IQR (1.5×), pero calculado de forma independiente "
+                "dentro de cada grupo en vez de sobre toda la columna a la vez -- un "
+                "valor puede ser normal para un grupo y anómalo para otro sin que el "
+                "IQR global lo distinga."
+            )
+            gc1, gc2 = st.columns(2)
+            with gc1:
+                col_iqr_grupo = st.selectbox(
+                    "Columna numérica a analizar", numeric_cols, key="iqr_by_group_col"
+                )
+            with gc2:
+                agrupar_por = st.selectbox(
+                    "Agrupar por", grupo_cols_disponibles, key="iqr_by_group_dim"
+                )
+            try:
+                st.dataframe(
+                    outlier_report_by_group(df_raw, col_iqr_grupo, agrupar_por),
+                    use_container_width=True, hide_index=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"No se pudo calcular el desglose por {agrupar_por}: {exc}")
+            st.caption(
+                "En este dataset, el desglose por grupo no cambia sustancialmente los "
+                "outliers detectados en ninguna de las columnas numéricas de "
+                "Inventario ni de Transacciones: las distribuciones (mediana, Q1, Q3) "
+                "son casi idénticas entre categorías, ciudades y canales — consistente "
+                "con el hallazgo de la Pregunta 2 (Fase Analítica) de que no hay una "
+                "zona logística estadísticamente distinta de las demás. Esta vista "
+                "queda disponible para auditar ese supuesto en cualquier filtro futuro, "
+                "en vez de darlo por hecho."
+            )
 
     registros_excluidos = cleaning_logs[dataset_sel].get("registros_excluidos")
     if registros_excluidos is not None and not registros_excluidos.empty:
